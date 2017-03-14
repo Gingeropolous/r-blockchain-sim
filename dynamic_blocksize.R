@@ -1,7 +1,16 @@
 # Monero dynamic blocksize simulator script
 # 2017 Gingeropolous
 
+# install.packages("ggplot2")
+# install.packages("reshape")
+# install.packages("digest")
+
 library(digest)
+require(ggplot2)
+require(reshape)
+
+setwd("/home/user/Desktop/")
+sink('blocksim_output.txt')
 
 # Number of blocks to run simulation
 num_blocks <- 100
@@ -71,7 +80,7 @@ num_transaction_dist <- floor(rnorm(400, mean=4, sd=3))
 hist(num_transaction_dist)
 
 for (i in 1:num_blocks) {
-  print("Beginning of main loop")
+  print("Beginning of block loop")
   print(i)
   #Take care of base reward!
   base_reward <-( tot_coins - gen_coins ) * 2^-19 
@@ -87,8 +96,8 @@ for (i in 1:num_blocks) {
   num_tx <- floor(rnorm(1, mean=4, sd=3)) # Genernate the number of transactions that are getting into the mempool during this block
   if (num_tx < 0 ) {num_tx <- 0} # If the numberis below 0, then force to 0. Skews the distribution to 0,
   if (i ==1 ) {num_tx <- 10} # Prevents dimension problem if first transaction pool is 0
-  print("Number of transactions")
-  print(num_tx)
+  #print("Number of transactions")
+  #print(num_tx)
   
   # What is the current size of the transaction pool
   # fee_ordered_pool[complete.cases(fee_ordered_pool),]
@@ -126,8 +135,8 @@ for (i in 1:num_blocks) {
   block_template <- matrix(NA, ncol = 4)
   
   block_template[1,] <- c(0,0,digest(runif(1),algo="md5"),95.0272) # initiate the block template, creating a random hash, and the size comes from 0.0928*1024
-  print("Before blockfill loop")
-  print(block_template)
+  #print("Before blockfill loop")
+  #print(block_template)
   
   countloop <- 0
   if (nrow(tx_pool) == 0) {print("Tx pool empty")}
@@ -161,6 +170,22 @@ for (i in 1:num_blocks) {
       perc_penalty <- 0
       pnlz_block_reward <- base_reward
       
+      newblocksize <- sum(as.numeric(block_template[,4]))
+      newblocktx <- nrow(block_template)
+      newblockbr <- base_reward
+      newblockpnlt <- base_reward - pnlz_block_reward
+      newblockfees <- sum(as.numeric(block_template[,2]))
+      newblockreward <-pnlz_block_reward + newblockfees
+      newbasereward <- pnlz_block_reward
+      
+      print("Size of candidate block less than median")
+      print("Block template")
+      print(block_template)
+      print("Size of block template + new transaction")
+      print(size_block_template+tx_size)
+      print ("New block reward")
+      print (newblockreward)
+      
       }
     
     else if ((size_block_template + tx_size) > med_100) { # This is the bitch case where we have to figure out if going over the median makes any sense
@@ -170,8 +195,25 @@ for (i in 1:num_blocks) {
       if (pnlz_block_reward + (sum(as.numeric(block_template[,2]))) + as.numeric(block_ordered_pool[1,2]) > base_reward) {
         block_template <- rbind(block_template,block_ordered_pool[1,]) # Add a transaction to the block template
         tx_pool_copy <- tx_pool_copy[-1,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
-      }
-      else { break}
+        
+        print("Size of candidate block GREATER than median")
+        newblocksize <- sum(as.numeric(block_template[,4]))
+        newblocktx <- nrow(block_template)
+        newblockbr <- base_reward
+        newblockpnlt <- base_reward - pnlz_block_reward
+        newblockfees <- sum(as.numeric(block_template[,2]))
+        newblockreward <-pnlz_block_reward + newblockfees
+        newbasereward <- pnlz_block_reward
+        
+        print("Block template")
+        print(block_template)
+        print("Size of block template + new transaction")
+        print(size_block_template+tx_size)
+        print ("New block reward")
+        print (newblockreward)
+        
+        }
+      else { break} # The placement of this break is presumably what caused the blockformation stuff to be borked if it was after the if-tree
     }
     else {print("WTF")}
     #print("Start of blockfill loop stats:")
@@ -190,49 +232,49 @@ for (i in 1:num_blocks) {
   # Col 5: Total fees
   # Col 6: Final block reward
   
-  
-  
-  newblocksize <- sum(as.numeric(block_template[,4]))
-  newblocktx <- nrow(block_template)
-  newblockbr <- base_reward
-  newblockpnlt <- base_reward - pnlz_block_reward
-  newblockfees <- sum(as.numeric(block_template[,2]))
-  newblockreward <-pnlz_block_reward + newblockfees
-  
-  newblock <- c(newblocksize,newblocktx,newblockbr,newblockpnlt,newblockfees,newblockreward,nrow(tx_pool_copy),num_tx,pnlz_block_reward)
+  # Lets add a new block to the chain !!!
+  newblock <- c(newblocksize,newblocktx,newblockbr,newblockpnlt,newblockfees,newblockreward,nrow(tx_pool_copy),num_tx,newbasereward)
   
   blockchain <- rbind (blockchain,newblock)
   
   tx_pool <- tx_pool_copy
-  print("Iteration")
-  print(i)
-  print("New Block Info")
-  print(newblock)
+  #print("Iteration")
+  #print(i)
+  #print("New Block Info")
+  #print(newblock)
   
-  gen_coins <- gen_coins + pnlz_block_reward 
+  gen_coins <- gen_coins + newbasereward 
   
+  # Rest all these variables
   newblocksize <- 0
   newblocktx <- 0
   newblockbr <- 0
   newblockpnlt <- 0
   newblockfees <- 0
   newblockreward <-0
-  
+  newbasereward <- 0
 } ############# End of primary for loop
 
 synth_blockchain <- blockchain[complete.cases(blockchain),]
 
-bcnames <- c("Block Size","Transactions in block","Base Reward","Block Penalty","Fees in Block","Total Block Reward with Fees","Number of txs in txpool","Num transactions entered into txpool","Finale Base Reward","nums")
+bcnames <- c("Block Size","Transactions in block","Base Reward","Block Penalty","Fees in Block","Total Block Reward with Fees","Number of txs in txpool","Num transactions entered into txpool","Final Base Reward")
 
 #matplot(synth_blockchain,type="l",)
 #legend("bottom", inset=.05, legend=bcnames, pch=1, col=c(2,4), horiz=FALSE)
 
 nums <- seq(1,nrow(synth_blockchain),1)
-synth_blockchain <- cbind(synth_blockchain,nums)
+#synth_blockchain <- cbind(synth_blockchain,nums)
 colnames(synth_blockchain)<-bcnames
 bcdf <- data.frame(synth_blockchain,row.names=nums)
+bcdf
 
-plot(bcdf)
+
+sink()
+
+
+write.table(bcdf, file = "blockchain.txt", append = FALSE, quote = TRUE, sep = "\t",
+            eol = "\n", na = "NA", dec = ".", row.names = FALSE,
+            col.names = TRUE, qmethod = c("escape", "double"))
 
 #plot(synth_blockchain[,1], type="o", col="blue")
 
