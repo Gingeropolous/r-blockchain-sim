@@ -13,11 +13,15 @@ setwd("/home/user/Desktop/")
 sink('blocksim_output.txt')
 
 # PARAMETERS TO MODIFY
-tx_mean <- 70 # mean number of transactions to add to txpool during each block
-tx_sd <- 30 # standard deviation for that 
-num_blocks <- 1000 # Number of blocks to run simulation
+tx_mean <- 20 # mean number of transactions to add to txpool during each block
+tx_sd <- 10 # standard deviation for that 
+# Our Transaction Number Distribution. Just run these lines to see the distribution
+num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
+hist(num_transaction_dist)
+
+num_blocks <- 3000 # Number of blocks to run simulation. 2880 = 1 day
 default_mult <- 4 # The default fee multiplier
-spike_factor <- 2 # The multiplier of simulated transaction spikes that defy the normal distribution
+spike_factor <- 10 # The multiplier of simulated transaction spikes that defy the normal distribution
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
 gen_coins <- 14092278e12 # Total generated coins grabbed from moneroblocks.info circa 3/12/2017
 tx_size <- 13*1024 # A fixed transaction size. can be made variable at some point
@@ -26,7 +30,6 @@ plus_one <- FALSE # This triggers the experimental +1 policy
 # Formulas and parameters that can be modified 
 ref_base <- 10e12
 CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 300000 # new on is 300000, old one is 60000
-twomed <- 2*CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 # Will later be adaptive
 fee_factor <- 0.004e12
 
 #Formula sources
@@ -81,13 +84,11 @@ hist(blockchain[,1])
 
 # bcnames <- c("Block Size","Transactions in block","Base Reward","Block Penalty","Fees in Block","Total Block Reward","Number of txs in txpool","Num transactions entered into txpool","Penalized Block Reward","nums")
 
-# Our Transaction Number Distribution
-num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
-hist(num_transaction_dist)
+
 
 # This is the beginning of the simulated blockchain. It will run num_blocks many times.
 for (i in 1:num_blocks) {
-  print("Beginning of block loop")
+  #print("Beginning of block loop")
   print(i)
   #Take care of base reward!
   base_reward <-( tot_coins - gen_coins ) * 2^-19 
@@ -104,7 +105,7 @@ for (i in 1:num_blocks) {
   
   spike <- runif(1) # Probability of pool dump randomizer, or just large transaction entrance
   if (spike > 0.90 ) {num_tx <- num_tx*spike_factor}
-  #print("Number of transactions")
+  #pprint("Number of transactions")
   #print(num_tx)
   
   # What is the current size of the transaction pool
@@ -153,7 +154,7 @@ for (i in 1:num_blocks) {
   if (nrow(tx_pool_copy) == 0) {print("Tx pool empty")} # Empty transactions pools cause the sim to break
   else {
 
-  repeat { ### This is the beginning of the block template loop
+  repeat { # This is the beginning of the block template loop
     countloop <- countloop + 1
     
   # First, we'll see if there are any high fee transactions in the mempool
@@ -190,13 +191,13 @@ for (i in 1:num_blocks) {
       newblockreward <-pnlz_block_reward + newblockfees
       newbasereward <- pnlz_block_reward
       
-      print("Size of candidate block less than median")
-      print("Block template")
-      print(block_template)
-      print("Size of block template + new transaction")
-      print(size_block_template+tx_size)
-      print ("New block reward")
-      print (newblockreward)
+      #print("Size of candidate block less than median")
+      #print("Block template")
+      #print(block_template)
+      #print("Size of block template + new transaction")
+      #print(size_block_template+tx_size)
+      #print ("New block reward")
+      #print (newblockreward)
       
       }
     
@@ -209,7 +210,7 @@ for (i in 1:num_blocks) {
         block_template <- rbind(block_template,block_ordered_pool[1,]) # Add a transaction to the block template
         tx_pool_copy <- tx_pool_copy[-1,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
         
-        print("Size of candidate block GREATER than median")
+        #print("Size of candidate block GREATER than median")
         newblocksize <- sum(as.numeric(block_template[,4]))
         newblocktx <- nrow(block_template)
         newblockbr <- base_reward
@@ -218,12 +219,12 @@ for (i in 1:num_blocks) {
         newblockreward <-pnlz_block_reward + newblockfees
         newbasereward <- pnlz_block_reward
         
-        print("Block template")
-        print(block_template)
-        print("Size of block template + new transaction")
-        print(size_block_template+tx_size)
-        print ("New block reward")
-        print (newblockreward)
+        #print("Block template")
+        #print(block_template)
+        #print("Size of block template + new transaction")
+        #print(size_block_template+tx_size)
+        #print ("New block reward")
+        #print (newblockreward)
         
       }
       else if (plus_one == TRUE && temp_diff <= tx_size) 
@@ -231,7 +232,7 @@ for (i in 1:num_blocks) {
         block_template <- rbind(block_template,block_ordered_pool[1,]) # Add a transaction to the block template
         tx_pool_copy <- tx_pool_copy[-1,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
         
-        print("Size of candidate block GREATER than median")
+        #print("Size of candidate block GREATER than median")
         newblocksize <- sum(as.numeric(block_template[,4]))
         newblocktx <- nrow(block_template)
         newblockbr <- base_reward
@@ -240,12 +241,12 @@ for (i in 1:num_blocks) {
         newblockreward <-base_reward + newblockfees # no penalty 
         newbasereward <- base_reward
         
-        print("Block template")
-        print(block_template)
-        print("Size of block template + new transaction")
-        print(size_block_template+tx_size)
-        print ("New block reward")
-        print (newblockreward)
+        #print("Block template")
+        #print(block_template)
+        #print("Size of block template + new transaction")
+        #print(size_block_template+tx_size)
+        #print ("New block reward")
+        #print (newblockreward)
         
         break # This should break from the blockfill loop after the plus one scenario is encountered
       }
@@ -257,10 +258,10 @@ for (i in 1:num_blocks) {
     #print(block_template)
     #print("End of stats")
     }
- } ##### This is the end of the Repeat Loop for creating a block template
-} ## end of the else for the tx_pool being full
+ } # This is the end of the Repeat Loop for creating a block template
+} # end of the else for the tx_pool being full
   
-  print("We made it out of the blockfill loop")
+  #print("We made it out of the blockfill loop")
   # Col 1: block size
   # Col 2: Number of transactions
   # Col 3: unmodified base reward
@@ -289,7 +290,7 @@ for (i in 1:num_blocks) {
   newblockfees <- 0
   newblockreward <-0
   newbasereward <- 0
-} ############# End of primary for loop
+} # End of primary for loop
 
 synth_blockchain <- blockchain[complete.cases(blockchain),]
 
