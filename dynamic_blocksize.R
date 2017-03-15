@@ -60,12 +60,13 @@ tot_coins <- 0xffffffffffffffff # Grabbed from moneromooos thing. Hooray R can r
 # tx_pool <- c() # should declare empty? screw it, we're not concerned with memory performance
 #I think this should be a matrix
 
-tx_pool <- matrix(NA,ncol = 4)
+tx_pool <- matrix(NA,ncol = 5)
 
 # Col 1: block entered
-# Col 2: fee multiplier
+# Col 2: fee
 # Col 3: hash
 # Col 4: tx_size, currently fixed, but will at some point be variable
+# Col 5: fee multiplier
 
 # Create a blockchain, and boostrap it with a median as pulled from the existing blockchain
 blockchain <- matrix(NA,nrow=200, ncol = 9)
@@ -112,7 +113,6 @@ for (i in 1:num_blocks) {
   # fee_ordered_pool[complete.cases(fee_ordered_pool),]
   # tx_pool_num <- nrow(tx_pool[complete.cases(tx_pool),])
   tx_pool_num <- nrow(tx_pool)
-  tx_pool_size <- tx_pool_num * tx_size
 
   # What is the current median of the last 100 blocks
   size_of_blockchain <- nrow(blockchain)
@@ -126,14 +126,23 @@ for (i in 1:num_blocks) {
   #This one seems to be implemented
   # unscaled_fee_per_kb = (DYNAMIC_FEE_PER_KB_BASE_FEE * CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 / median_block_size);
   perkb_fee <- fee_factor*CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2/med_100
-  
+  mult <- default_mult
   # Lets try simulating transactions being created during this block    
   for (p in 1:num_tx) {  
-    if (tx_pool_size > med_100 && wallet_auto_fee == TRUE) {
-      # skip for now
+    tx_size_random <- runif(1) 
+    if(tx_size_random <= 0.5) {tx_size <- 12.65*1024}
+    else if (tx_size_random > 0.5 && tx_size_random <= 0.75) {tx_size <- 49.89*1024}
+    else if (tx_size_random > 0.75 && tx_size_random <= 0.85) {tx_size <- 23.57*1024}
+    else if (tx_size_random > 0.85 && tx_size_random <= 0.90) {tx_size <- 17.06*1024}
+    else if (tx_size_random > 0.90 && tx_size_random <= 0.98) {tx_size <- 37.58*1024}
+    else if (tx_size_random > 0.98 && tx_size_random <= 1.00) {tx_size <- 62.58*1024}
+    else {tx_size <- 12.65*1024}
+    
+    if (wallet_auto_fee == TRUE) {
+      # skip for now. Need to add back in if tx_pool_size > med_100
     }
     else {
-      transaction <- c(i,default_mult*perkb_fee*(tx_size/1024),digest(runif(1),algo="md5"),tx_size) # Add the transaction to the mempool, 
+      transaction <- c(i,mult*perkb_fee*(tx_size/1024),digest(runif(1),algo="md5"),tx_size,mult) # Add the transaction to the mempool, 
       # Where the transaction is identified by the block # its added in, the fee multiplier, a random hash, and the transaction size
       tx_pool <- rbind(tx_pool,transaction) 
     }
@@ -143,10 +152,10 @@ for (i in 1:num_blocks) {
   # OK, lets try to make a block and add it to the chain and delete the transactions from the transaction pool
   # This is gonna be a bitch
   
-  tx_pool_copy <- tx_pool # Lets not mess with the main transaction pool
-  block_template <- matrix(NA, ncol = 4)
+  tx_pool_copy <- tx_pool # Lets not mess with the main transaction pool. This is useless. Dunno why I copied.
+  block_template <- matrix(NA, ncol = 5)
   
-  block_template[1,] <- c(0,0,digest(runif(1),algo="md5"),95.0272) # initiate the block template, creating a random hash, and the size comes from 0.0928*1024
+  block_template[1,] <- c(0,0,digest(runif(1),algo="md5"),95.0272,0) # initiate the block template, creating a random hash, and the size comes from 0.0928*1024
   #print("Before blockfill loop")
   #print(block_template)
   
@@ -155,15 +164,15 @@ for (i in 1:num_blocks) {
   else {
 
   repeat { # This is the beginning of the block template loop
-    countloop <- countloop + 1
+    countloop <- countloop + 1 # This was for debugging. Shows how many times it takes to fill a block
     
   # First, we'll see if there are any high fee transactions in the mempool
     
     if (nrow(tx_pool_copy) == 0) { break } # Introduced because buggy if txpool gets emptied by blockfilling process
     else {
-    fee_ordered_pool <- tx_pool_copy[sort.list(tx_pool_copy[,2],decreasing=TRUE),,drop=FALSE ] # Order the tx_pool by the highest total fee
-    highest_fee <- as.numeric(fee_ordered_pool[1,2]) # find the highest fee
-    high_fee_index <- c(which(as.numeric(fee_ordered_pool[,2]) == highest_fee)) # Get row indexes of all the transactions with this fee
+    fee_ordered_pool <- tx_pool_copy[sort.list(tx_pool_copy[,5],decreasing=TRUE),,drop=FALSE ] # Order the tx_pool by the highest total fee MULTIPLIER
+    highest_fee <- as.numeric(fee_ordered_pool[1,5]) # find the highest fee MULTIPLIER
+    high_fee_index <- c(which(as.numeric(fee_ordered_pool[,5]) == highest_fee)) # Get row indexes of all the transactions with this fee
     high_fee_pool <- rbind(fee_ordered_pool[high_fee_index,]) # Create sub matrix of the high transactions
     
     block_ordered_pool <- high_fee_pool[sort.list(high_fee_pool[,1]),,drop=FALSE] # Sort the high fee subset by when they were added to the tx pool
@@ -174,12 +183,35 @@ for (i in 1:num_blocks) {
     #block_ordered_pool <- high_fee_pool[order(high_fee_pool[,1],decreasing=FALSE),] # Sort based on block added - older transactions will be added first
     #print ("Size of block template")
     #print (size_block_template)
-    # The below transaction adding logic misses any transactions that would fall below the standard size of a transaction
     
-    if ((size_block_template + tx_size) <= med_100){ # So this is the easiest. If the block is lower than the median, we just add most recent and highest fee (would be the most profitable)
+    
+    # So, theoretically, the fee per KB means that the size of the transaction will always be proportional to the fee
+    # However, if a variable multiplier is used, this could be skewed
+    # So we just sorted by the fee multiplier, which will lead to the most efficient blockfill for the miner
+    # However, there are cases where a higher fee transaction might be worth less than a larger transaction with lower fee per kb
+    # though a smaller block with higher overall fee / kb will propagate faster
+    
+    # num_tx_bopool <- nrow(block_ordered_pool)
+    # med_100_ray <- rep(med_100,num_tx_bopool)
+    # bt_ray <- rep(size_block_template,num_tx_bopool)
+    # cand_ray <-as.numeric(block_ordered_pool[,4])
+    # 
+    # diff_ray <- med_100_ray - bt_ray + cand_ray
+    
+    diff_ordered_pool <- cbind(block_ordered_pool,c(med_100-size_block_template+as.numeric(block_ordered_pool[,4])))
+    diff_ordered_pool <- diff_ordered_pool[sort.list(diff_ordered_pool[,6]),,drop=FALSE] 
+    
+    # The first case now just uses the highest fee multiplier transaction of the lowest size
+    
+    # Need to create two seperate if trees. one for initial blockfill, and then one for the capping off. Older transactions get priority for initial blockfill. Topping off is when things change. 
+    
+    if ((size_block_template + diff_ordered_pool[1,4]) <= med_100){ # So this is the easiest. If the block is lower than the median, we just add most recent and highest fee (would be the most profitable)
       #print(block_ordered_pool[1,]) # For logging
-      block_template <- rbind(block_template,block_ordered_pool[1,]) # Add a transaction to the block template
-      tx_pool_copy <- tx_pool_copy[-1,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
+      block_template <- rbind(block_template,diff_ordered_pool[1,]) # Add a transaction to the block template
+      
+      tx_index <- which(tx_pool_copy == diff_ordered_pool[1,3]) # Use the hash identifier to get index of transaction in original txpool
+      
+      tx_pool_copy <- tx_pool_copy[-tx_index,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
       perc_penalty <- 0
       pnlz_block_reward <- base_reward
       
@@ -201,8 +233,8 @@ for (i in 1:num_blocks) {
       
       }
     
-    else if ((size_block_template + tx_size) > med_100 && (size_block_template + tx_size) <= (2*med_100)) { # This is the bitch case where we have to figure out if going over the median makes any sense
-      temp_diff <- (size_block_template + as.numeric(block_ordered_pool[1,4])) - med_100  # This just grabs the difference between the median 100 and the potential new block with an additional transaction. 
+    else if ((size_block_template + diff_ordered_pool[1,4]) > med_100 && (size_block_template + tx_size) <= (2*med_100)) { # This is the bitch case where we have to figure out if going over the median makes any sense
+      temp_diff <- (size_block_template + as.numeric(diff_ordered_pool[1,4])) - med_100  # This just grabs the difference between the median 100 and the potential new block with an additional transaction. 
       perc_penalty <- temp_diff / med_100
       pnlz_block_reward <- base_reward - (base_reward * perc_penalty)
       if (plus_one == FALSE && pnlz_block_reward + (sum(as.numeric(block_template[,2]))) + as.numeric(block_ordered_pool[1,2]) > base_reward) 
