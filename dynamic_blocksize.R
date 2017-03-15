@@ -6,20 +6,50 @@
 # install.packages("digest")
 
 library(digest)
-require(ggplot2)
-require(reshape)
+# require(ggplot2)
+# require(reshape)
 
 setwd("/home/user/Desktop/")
 sink('blocksim_output.txt')
 
-# Number of blocks to run simulation
-num_blocks <- 100
-
+# PARAMETERS TO MODIFY
+tx_mean <- 70 # mean number of transactions to add to txpool during each block
+tx_sd <- 30 # standard deviation for that 
+num_blocks <- 1000 # Number of blocks to run simulation
 default_mult <- 4 # The default fee multiplier
-size_block_template <- 0 # Don't modify
+spike_factor <- 2 # The multiplier of simulated transaction spikes that defy the normal distribution
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
 gen_coins <- 14092278e12 # Total generated coins grabbed from moneroblocks.info circa 3/12/2017
 tx_size <- 13*1024 # A fixed transaction size. can be made variable at some point
+plus_one <- FALSE # This triggers the experimental +1 policy
+
+# Formulas and parameters that can be modified 
+ref_base <- 10e12
+CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 300000 # new on is 300000, old one is 60000
+twomed <- 2*CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 # Will later be adaptive
+fee_factor <- 0.004e12
+
+#Formula sources
+
+#From: https://en.wikipedia.org/wiki/Monero_(cryptocurrency)#Features
+# max(0.6, floor((tot_coins − gen_coins)*2e−19)*10e−12)
+# max(0.6, floor((M − A)×2−19)×10−12) XMR, with M = 264 − 1 and A = 1012 times the amount of XMR already emitted).
+
+
+#From: http://monero.stackexchange.com/questions/2531/how-does-the-dynamic-fee-calculation-work
+#fee = (R/R0) * (M0/M) * F0
+#R: base reward
+#R0: reference base reward (10 monero)
+#M: block size limit
+#M0: minimum block size limit (60000)
+#F0: 0.002 monero
+
+#From: https://github.com/monero-project/monero/pull/1276/files#diff-1279d7b0ddc432573cd2bd8c6e632c1fR2718
+# uint64_t unscaled_fee_per_kb = (DYNAMIC_FEE_PER_KB_BASE_FEE * CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 / median_block_size);
+
+
+# These shouldn't be modified
+size_block_template <- 0 # Don't modify
 tot_coins <- 0xffffffffffffffff # Grabbed from moneromooos thing. Hooray R can read this nonsense
 
 # Create a tx_pool, where each transaction is merely identified by the fee multiplier associated with it
@@ -47,38 +77,15 @@ hist(blockchain[,1])
 # Col 6: Final block reward
 # Col 7: Number of txs in txpool
 # Col 8: Num transactions entered into txpool
-# Col 9: Penalized Block Reward
+# Col 9: Penalized Block Reward (number of generated coins)
 
 # bcnames <- c("Block Size","Transactions in block","Base Reward","Block Penalty","Fees in Block","Total Block Reward","Number of txs in txpool","Num transactions entered into txpool","Penalized Block Reward","nums")
 
-
-#Formulas
-
-#From: https://en.wikipedia.org/wiki/Monero_(cryptocurrency)#Features
-# max(0.6, floor((tot_coins − gen_coins)*2e−19)*10e−12)
-# max(0.6, floor((M − A)×2−19)×10−12) XMR, with M = 264 − 1 and A = 1012 times the amount of XMR already emitted).
-
-
-#From: http://monero.stackexchange.com/questions/2531/how-does-the-dynamic-fee-calculation-work
-#fee = (R/R0) * (M0/M) * F0
-#R: base reward
-#R0: reference base reward (10 monero)
-#M: block size limit
-#M0: minimum block size limit (60000)
-#F0: 0.002 monero
-
-#From: https://github.com/monero-project/monero/pull/1276/files#diff-1279d7b0ddc432573cd2bd8c6e632c1fR2718
-# uint64_t unscaled_fee_per_kb = (DYNAMIC_FEE_PER_KB_BASE_FEE * CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 / median_block_size);
-
-ref_base <- 10e12
-CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 60000
-twomed <- 2*CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 # Will later be adaptive
-fee_factor <- 0.004e12
-
 # Our Transaction Number Distribution
-num_transaction_dist <- floor(rnorm(400, mean=4, sd=3))
+num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
+# This is the beginning of the simulated blockchain. It will run num_blocks many times.
 for (i in 1:num_blocks) {
   print("Beginning of block loop")
   print(i)
@@ -86,16 +93,17 @@ for (i in 1:num_blocks) {
   base_reward <-( tot_coins - gen_coins ) * 2^-19 
   if (base_reward < 600000000000) { base_reward <- 600000000000 }
   
-  #Lets try the per kb fee
-  #The one below, as documented on the SE and on bitcointalk, doesn't seem to actually be implemented in the code
-  #fee <- (base_reward/ref_base)*(min_block/block_size_limit)*fee_factor
-  
   # Lets generate some fake numbers!
   
   # Number of transactions being created by users and added to the txpool in this block
-  num_tx <- floor(rnorm(1, mean=4, sd=3)) # Genernate the number of transactions that are getting into the mempool during this block
+  num_tx <- floor(rnorm(1, mean=tx_mean, sd=tx_sd)) # Genernate the number of transactions that are getting into the mempool during this block
   if (num_tx < 0 ) {num_tx <- 0} # If the numberis below 0, then force to 0. Skews the distribution to 0,
   if (i ==1 ) {num_tx <- 10} # Prevents dimension problem if first transaction pool is 0
+  
+  # A random function to create large influxes of transactions that defy the normal distribution, spike
+  
+  spike <- runif(1) # Probability of pool dump randomizer, or just large transaction entrance
+  if (spike > 0.90 ) {num_tx <- num_tx*spike_factor}
   #print("Number of transactions")
   #print(num_tx)
   
@@ -110,7 +118,10 @@ for (i in 1:num_blocks) {
   last_100 <- c(blockchain[(size_of_blockchain-99):size_of_blockchain],1)
   med_100 <- median(last_100)
   if (med_100 < CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2) {med_100 <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2}
-  
+
+  #Lets try the per kb fee
+  #The one below, as documented on the SE and on bitcointalk, doesn't seem to actually be implemented in the code
+  #fee <- (base_reward/ref_base)*(min_block/block_size_limit)*fee_factor  
   #This one seems to be implemented
   # unscaled_fee_per_kb = (DYNAMIC_FEE_PER_KB_BASE_FEE * CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 / median_block_size);
   perkb_fee <- fee_factor*CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2/med_100
@@ -139,21 +150,22 @@ for (i in 1:num_blocks) {
   #print(block_template)
   
   countloop <- 0
-  if (nrow(tx_pool) == 0) {print("Tx pool empty")}
+  if (nrow(tx_pool_copy) == 0) {print("Tx pool empty")} # Empty transactions pools cause the sim to break
   else {
+
   repeat { ### This is the beginning of the block template loop
     countloop <- countloop + 1
     
   # First, we'll see if there are any high fee transactions in the mempool
     
-    if (nrow(tx_pool_copy) == 0) { break } # Introduced because buggy if txpool is empty
+    if (nrow(tx_pool_copy) == 0) { break } # Introduced because buggy if txpool gets emptied by blockfilling process
     else {
-    fee_ordered_pool <- tx_pool_copy[sort.list(tx_pool_copy[,2],decreasing=TRUE),,drop=FALSE ]
+    fee_ordered_pool <- tx_pool_copy[sort.list(tx_pool_copy[,2],decreasing=TRUE),,drop=FALSE ] # Order the tx_pool by the highest total fee
     highest_fee <- as.numeric(fee_ordered_pool[1,2]) # find the highest fee
     high_fee_index <- c(which(as.numeric(fee_ordered_pool[,2]) == highest_fee)) # Get row indexes of all the transactions with this fee
     high_fee_pool <- rbind(fee_ordered_pool[high_fee_index,]) # Create sub matrix of the high transactions
     
-    block_ordered_pool <- high_fee_pool[sort.list(high_fee_pool[,1]),,drop=FALSE]
+    block_ordered_pool <- high_fee_pool[sort.list(high_fee_pool[,1]),,drop=FALSE] # Sort the high fee subset by when they were added to the tx pool
     size_block_template <- sum(as.numeric(block_template[,4]))
     
     #print("After loop")
@@ -188,11 +200,12 @@ for (i in 1:num_blocks) {
       
       }
     
-    else if ((size_block_template + tx_size) > med_100) { # This is the bitch case where we have to figure out if going over the median makes any sense
+    else if ((size_block_template + tx_size) > med_100 && (size_block_template + tx_size) <= (2*med_100)) { # This is the bitch case where we have to figure out if going over the median makes any sense
       temp_diff <- (size_block_template + as.numeric(block_ordered_pool[1,4])) - med_100  # This just grabs the difference between the median 100 and the potential new block with an additional transaction. 
       perc_penalty <- temp_diff / med_100
       pnlz_block_reward <- base_reward - (base_reward * perc_penalty)
-      if (pnlz_block_reward + (sum(as.numeric(block_template[,2]))) + as.numeric(block_ordered_pool[1,2]) > base_reward) {
+      if (plus_one == FALSE && pnlz_block_reward + (sum(as.numeric(block_template[,2]))) + as.numeric(block_ordered_pool[1,2]) > base_reward) 
+        {
         block_template <- rbind(block_template,block_ordered_pool[1,]) # Add a transaction to the block template
         tx_pool_copy <- tx_pool_copy[-1,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
         
@@ -212,10 +225,33 @@ for (i in 1:num_blocks) {
         print ("New block reward")
         print (newblockreward)
         
-        }
+      }
+      else if (plus_one == TRUE && temp_diff <= tx_size) 
+        {
+        block_template <- rbind(block_template,block_ordered_pool[1,]) # Add a transaction to the block template
+        tx_pool_copy <- tx_pool_copy[-1,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
+        
+        print("Size of candidate block GREATER than median")
+        newblocksize <- sum(as.numeric(block_template[,4]))
+        newblocktx <- nrow(block_template)
+        newblockbr <- base_reward
+        newblockpnlt <- 0 # no penalty for plus one
+        newblockfees <- sum(as.numeric(block_template[,2]))
+        newblockreward <-base_reward + newblockfees # no penalty 
+        newbasereward <- base_reward
+        
+        print("Block template")
+        print(block_template)
+        print("Size of block template + new transaction")
+        print(size_block_template+tx_size)
+        print ("New block reward")
+        print (newblockreward)
+        
+        break # This should break from the blockfill loop after the plus one scenario is encountered
+      }
       else { break} # The placement of this break is presumably what caused the blockformation stuff to be borked if it was after the if-tree
     }
-    else {print("WTF")}
+    else {break} # Yeah, this should do it!
     #print("Start of blockfill loop stats:")
     #print(tx_pool_copy)
     #print(block_template)
