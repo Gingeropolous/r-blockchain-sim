@@ -12,9 +12,8 @@ library(digest)
 # require(ggplot2)
 # require(reshape)
 
-setwd("/home/user/Desktop/")
+#setwd("/home/user/Desktop/")
 # sink('blocksim_output.txt')
-
 
 
 # PARAMETERS TO MODIFY
@@ -24,12 +23,12 @@ tx_sd <- 10 # standard deviation for that
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 3000 # Number of blocks to run simulation. 2880 = 1 day
+num_blocks <- 1000 # Number of blocks to run simulation. 720 = 1 day
 default_mult <- 4 # The default fee multiplier
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
 gen_coins <- 14092278e12 # Total generated coins grabbed from moneroblocks.info circa 3/12/2017
-plus_one <- FALSE # This triggers the experimental +1 policy
+plus_one <- FALSE # This triggers the experimental +1 policy, where there is no fee
 
 # Formulas and parameters that can be modified 
 
@@ -70,6 +69,7 @@ tot_coins <- 0xffffffffffffffff # Grabbed from moneromooos thing. Hooray R can r
 
 tx_pool <- matrix(NA,ncol = 5)
 
+# Tx pool format:
 # Col 1: block entered
 # Col 2: fee
 # Col 3: hash
@@ -502,11 +502,8 @@ nums <- seq(1,nrow(synth_blockchain),1)
 #synth_blockchain <- cbind(synth_blockchain,nums)
 colnames(synth_blockchain)<-bcnames
 bcdf <- data.frame(synth_blockchain,row.names=nums)
-bcdf
-
 
 #sink()
-
 
 write.table(bcdf, file = "blockchain.txt", append = FALSE, quote = TRUE, sep = "\t",
             eol = "\n", na = "NA", dec = ".", row.names = FALSE,
