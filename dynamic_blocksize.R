@@ -24,7 +24,7 @@ tx_sd <- 10 # standard deviation for that
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 1000 # Number of blocks to run simulation. 2880 = 1 day
+num_blocks <- 3000 # Number of blocks to run simulation. 2880 = 1 day
 default_mult <- 4 # The default fee multiplier
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
@@ -117,7 +117,7 @@ for (i in 1:num_blocks) {
   spike <- runif(1) # Probability of pool dump randomizer, or just large transaction entrance
   if (spike > 0.95 ) {num_tx <- num_tx*spike_factor}
   
-  num_tx=floor(num_tx*(abs(2*sin(i/180))))
+  num_tx=floor(num_tx*(1+sin(i/180)))
   
   #pprint("Number of transactions")
   #print(num_tx)
@@ -315,8 +315,8 @@ for (i in 1:num_blocks) {
     pnlz_block_reward <- base_reward - P_current
     
     if (size_block_template + as.numeric(block_ordered_pool[1,4]) <= med_100){ # So this is the easiest. If the block is lower than the median, we just add most recent and highest fee (would be the most profitable)
-      print("First if")
-      print(countloop)
+      #print("First if")
+      #print(countloop)
       #print(block_ordered_pool[1,]) # For logging
       block_template <- rbind(block_template,block_ordered_pool[1,1:5]) # Add a transaction to the block template
       tx_index <- which(tx_pool_copy[,3] == block_ordered_pool[1,3]) # Use the hash identifier to get index of transaction in original txpool
@@ -347,12 +347,12 @@ for (i in 1:num_blocks) {
     
     #else if ((size_block_template + as.numeric(block_ordered_pool[1,4]) > med_100 && size_block_template + as.numeric(block_ordered_pool[1,4]) <= (2*med_100))) { # This is the bitch case where we have to figure out if going over the median makes any sense
     else if (size_block_template + as.numeric(block_ordered_pool[1,4]) > med_100 ) { # We don't need the above because all transactions that would push the template above 2x median have been filtered out
-      print("Second if")
-      print(countloop)
+      #print("Second if")
+      #print(countloop)
       if (plus_one == FALSE && pnlz_block_reward + (sum(as.numeric(block_template[,2]))) + as.numeric(block_ordered_pool[1,2]) > base_reward) 
         { # In this block add, the standard fee prioritized and block order prioritized transaction gets added to the block template, if its economical
-        print("First sub-if")
-        print(countloop)
+        #print("First sub-if")
+        #print(countloop)
         block_template <- rbind(block_template,block_ordered_pool[1,1:5]) # Add a transaction to the block template
         
         tx_index <- which(tx_pool_copy[,3] == block_ordered_pool[1,3]) # Use the hash identifier to get index of transaction in original txpool
@@ -377,8 +377,8 @@ for (i in 1:num_blocks) {
       }
       else if (plus_one == TRUE) 
         { # Here, a transaction gets added even though its above the median, but only 1 gets added, and there's no penalty
-        print("plus one if")
-        print(countloop)
+        #print("plus one if")
+        #print(countloop)
         block_template <- rbind(block_template,block_ordered_pool[1,1:5]) # Add a transaction to the block template
         
         tx_index <- which(tx_pool_copy[,3] == block_ordered_pool[1,3]) # Use the hash identifier to get index of transaction in original txpool
@@ -417,6 +417,7 @@ for (i in 1:num_blocks) {
         {
           print("Nothing else can fit in this block. It took this many loops:")
           print(countloop)
+          print(i)
           break
         }
       }
@@ -430,6 +431,7 @@ for (i in 1:num_blocks) {
     
     else {
       print("We broke out of the blockfill loop without meeting any of the fill criteria")
+      print(i)
       #print(block_template)
       #print(block_ordered_pool)
       #newblocksize <- sum(as.numeric(block_template[,4]))
