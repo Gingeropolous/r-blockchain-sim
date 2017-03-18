@@ -4,7 +4,7 @@ Attempt to simulate blockchain dynamics
 
 ## Features
 - Overly commented code that makes fiddling quite easy, hopefully.  
-- Dynamic transaction sizes.  
+- Variable transaction sizes.  
 - Simulates backlogs of transactions in the txpool.  
 - Uses oscillator function to mimic bursts and lulls in network usage. 
 
