@@ -1,6 +1,6 @@
 # r-blockchain-sim
-Attempt to simulate blockchain dynamics
-2017 Gingeropolous
+Attempt to simulate blockchain dynamics  
+2017 Gingeropolous  
 
 ## Features
 - Overly commented code that makes fiddling quite easy, hopefully.  
