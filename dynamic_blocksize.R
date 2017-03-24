@@ -266,8 +266,8 @@ for (i in 1:num_blocks) {
     
     # Need to use the difference between median and current blocksize to subset pool for candidates and then sort that pool by block age
     
-    cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
-    write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
+    #cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    #write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
     
     if (size_block_template + as.numeric(block_ordered_pool[1,4]) <= med_100) {
       #So this is the easiest. If the block is lower than the median, we just add most recent and highest fee (would be the most profitable)
