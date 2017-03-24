@@ -198,7 +198,7 @@ for (i in 1:num_blocks) {
   tx_pool_copy <- tx_pool # Lets not mess with the main transaction pool. This is useless. Dunno why I copied.
   block_template <- matrix(NA, ncol = 5)
   # initiate the block template, creating a random hash, and the size comes from 0.0928*1024
-  block_template[1,] <- c(0,0,digest(runif(1),algo="md5"),95.0272,0) 
+  block_template[1,] <- c(i,0,digest(runif(1),algo="md5"),95.0272,0) 
   #print("Before blockfill loop")
   #print(block_template)
   
@@ -332,7 +332,7 @@ for (i in 1:num_blocks) {
   
   # Lets add a new block to the chain !!!
   
-  newblock <- c(newblocksize,newblocktx,new_base_reward,P_current,newblockfees,newblockreward,(nrow(tx_pool_copy)),num_tx,i-max(as.numeric(block_template[,1])),med_100)
+  newblock <- c(newblocksize,newblocktx,new_base_reward,P_current,newblockfees,newblockreward,(nrow(tx_pool_copy)),num_tx,i-min(as.numeric(block_template[,1])),med_100)
   #print(newblock)
   blockchain <- rbind (blockchain,newblock)
   
