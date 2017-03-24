@@ -23,7 +23,7 @@ tx_sd <- 5 # standard deviation for that
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 20 # Number of blocks to run simulation. 720 = 1 day
+num_blocks <- 720 # Number of blocks to run simulation. 720 = 1 day
 default_mult <- 4 # The default fee multiplier
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
@@ -146,11 +146,21 @@ for (i in 1:num_blocks) {
   #where R_0 = 10 monero is the reference base reward, and F_0 = 0.002 monero / kB.
   # where R is the base block reward, B the block size and M the median block size of the last 100 blocks. The penalty doesn't come in effect unless B > M_0, where M_0 = 60000 bytes is the minimum penalty-free block size. Maximum allowed block size is 2 * M, at which the full base block reward is witheld.
   R <- base_reward
-  R_0 <- 10e12
+  R_0 <- ref_base
   M <- med_100
   M_0 <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2
   F_0 <- fee_factor
   
+  BASE_FEE_PER_KB <- fee_factor
+  MIN_BLOCK_SIZE_MEDIAN <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2
+  median_size <- med_100
+  subsidy <- base_reward
+  REFERENCE_SUBSIDY <- ref_base
+  
+  #Moneromoooos
+  #perkb_fee <- BASE_FEE_PER_KB * MIN_BLOCK_SIZE_MEDIAN / median_size * subsidy / REFERENCE_SUBSIDY
+  
+  #Jollymorts
   perkb_fee = (R / R_0) * (M_0 / M) * F_0
   
   # perkb_fee <- fee_factor*CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2/med_100
@@ -211,28 +221,15 @@ for (i in 1:num_blocks) {
       print("Tx pool empty and detected in blockfill loop")
       break 
       } else {
-    
-    # This culls any transactions that force the block to 2x median. Kind of useless maybe
-    # new_cand_size <- size_block_template + as.numeric(tx_pool_copy[,4])
-    # too_big_index <- which(new_cand_size[] > (2*med_100))
-    # if (length(too_big_index) > 0 && length(too_big_index) < (nrow(tx_pool_copy)-1)) 
-    # {
-    #   tx_pool_copy <- tx_pool_copy[-too_big_index,,drop = FALSE]
-    # }
-    # else if (length(too_big_index) == nrow(tx_pool_copy)) 
-    {
-      #print("All the txs are tooooo BIG!")
-    } # Let the if/thens below take care of the break
 
-    # B <- size_block_template + as.numeric(tx_pool_copy[1,4])
-    
+
     # P_current = R * ((B / M) - 1) ^ 2
     
     # Column 6: shows the difference between the current median and the new potential blocksize with the transaction added
     tx_pool_comp <- cbind(tx_pool_copy,c(M-size_block_template))
     # Column 7: This line will calculate P_current if the transaction is added to the block
     # R * ( (B / M) - 1) ^ 2
-    tx_pool_comp <- cbind(tx_pool_comp,c(R * ( ( (as.numeric(tx_pool_comp[,4]) + size_block_template / med_100) -1 ) ^ 2 )))
+    tx_pool_comp <- cbind(tx_pool_comp,c(R * ( ( (as.numeric(tx_pool_comp[,4]) + size_block_template) / med_100) -1 ) ^ 2 ))
     # Column 8: This line will calculate the total blockreward if the transaction is added to the block template
     tx_pool_comp <- cbind(tx_pool_comp,c(as.numeric(tx_pool_comp[,2])+base_reward-as.numeric(tx_pool_comp[,7])))
     
@@ -282,19 +279,20 @@ for (i in 1:num_blocks) {
         print("Second if triggered - standard addition goes over median")
         highest_gain <- max(as.numeric(tx_pool_comp[,8]))
         stuff_index <- c(which(as.numeric(tx_pool_comp[,4]) <= as.numeric(tx_pool_comp[,6])))
-        if (length(stuff_index >= 1)) {
+        if (highest_gain >= 0) {
+          print("Second sub-if. A normal ordered transaction can't fit, we can't stuff another in, and there is a high gain transaction")
+          high_gain_index <- c(which(as.numeric(tx_pool_comp[,8]) == highest_gain)) # Get row indexes of all the transactions with this gain
+          if (length(high_gain_index) > 1) {high_gain_index <- high_gain_index[1]} # In future can make this random but screw it for now
+          new_transaction <- tx_pool_comp[high_gain_index,1:5]
+          P_current <- as.numeric(tx_pool_comp[high_gain_index,7])
+        
+        } else if (length(stuff_index >= 1)) {
           print("First sub-if. Things can still fit in the block, just not the one that should go in based on transaction age")
           stuff_pool <- tx_pool_comp[stuff_index,,drop=FALSE] # Extract the transactions that will fit
           block_ordered_stuff <- stuff_pool[sort.list(stuff_pool[,1]),,drop=FALSE] # Sort these based on their block age
           new_transaction <- block_ordered_stuff[1,1:5]
           P_current <- 0
-        } else if (highest_gain >= 0) {
-          print("Second sub-if. A normal ordered transaction can't fit, we can't stuff another in, but there is a high gain transaction")
-          high_gain_index <- c(which(as.numeric(tx_pool_comp[,8]) == highest_gain)) # Get row indexes of all the transactions with this gain
-          if (length(high_gain_index) > 1) {high_gain_index <- high_gain_index[1]} # In future can make this random but screw it for now
-          new_transaction <- tx_pool_comp[high_gain_index,1:5]
-          P_current <- as.numeric(tx_pool_comp[high_gain_index,7])
-          
+        
         } else {
           print("Break out of blockfill because over median and no gain possible")
           break
@@ -357,6 +355,13 @@ for (i in 1:num_blocks) {
   
   # Rest all these variables
   #Sys.sleep(1)
+  last <- 200+i
+  if (i > 2 && as.numeric(blockchain[last,7]) > 500*(as.numeric(blockchain[last,2]))) 
+  {
+    print("Tx pool grew to 500 X the most recent number of transactions added to block. Stopping simulation")
+    cat(c("Tx pool grew to 500 X the most recent number of transactions added to block. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    break
+  }
 } # End of primary for loop
 
 synth_blockchain <- blockchain[complete.cases(blockchain),]
