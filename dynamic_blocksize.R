@@ -23,8 +23,8 @@ tx_sd <- 5 # standard deviation for that
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 720 # Number of blocks to run simulation. 720 = 1 day
-default_mult <- 4 # The default fee multiplier
+num_blocks <- 40 # Number of blocks to run simulation. 720 = 1 day
+default_mult <- 1 # The default fee multiplier
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
 
@@ -78,7 +78,7 @@ tx_pool <- matrix(NA,ncol = 5)
 # Col 5: fee multiplier
 
 # Create a blockchain, and boostrap it with a median as pulled from the existing blockchain
-blockchain <- matrix(NA,nrow=200, ncol = 10)
+blockchain <- matrix(NA,nrow=200, ncol = 11)
 blockchain[,1] <- (rnorm(200, mean=51983.5, sd=20000))
 hist(blockchain[,1])
 
@@ -87,14 +87,15 @@ hist(blockchain[,1])
 # Col 2: Number of transactions
 # Col 3: unmodified base reward
 # Col 4: Penalty
-# Col 5: Total fees
-# Col 6: Final block reward
-# Col 7: Remaining transaction in txpool
-# Col 8: Number transaction entered into pool in this block
-# Col 9: Max age of transaction that was added to this block
-# Col 10: Median past 100
+# Col 5: New base reward
+# Col 6: Total fees
+# Col 7: Final block reward
+# Col 8: Remaining transaction in txpool
+# Col 9: Number transaction entered into pool in this block
+# Col 10: Max age of transaction that was added to this block
+# Col 11: Median past 100
 
-bcnames <- c("Block Size","Transactions in block","Base Reward","Block Penalty","Fees in Block","Total Block Reward with Fees","Remaining of txs in txpool","Num transactions entered into txpool","Oldest.tx","Median100")
+bcnames <- c("Block Size","Transactions in block","Un-modified Base Reward","Block Penalty","New base reward", "Fees in Block","Total Block Reward with Fees","Remaining of txs in txpool","Num transactions entered into txpool","Oldest.tx","Median100")
 
 tmpltnames <- c("Blocktime added to txpool","Fee","Hash","Size","Multiplier")
 
@@ -225,13 +226,14 @@ for (i in 1:num_blocks) {
 
     # P_current = R * ((B / M) - 1) ^ 2
     
-    # Column 6: shows the difference between the current median and the new potential blocksize with the transaction added
-    tx_pool_comp <- cbind(tx_pool_copy,c(M-size_block_template))
+    # Column 6: shows the difference between the current median and the current blocksize before the transaciton is added
+    tx_pool_comp <- cbind(tx_pool_copy,c(med_100-size_block_template))
     # Column 7: This line will calculate P_current if the transaction is added to the block
     # R * ( (B / M) - 1) ^ 2
     tx_pool_comp <- cbind(tx_pool_comp,c(R * ( ( (as.numeric(tx_pool_comp[,4]) + size_block_template) / med_100) -1 ) ^ 2 ))
     # Column 8: This line will calculate the total blockreward if the transaction is added to the block template
-    tx_pool_comp <- cbind(tx_pool_comp,c(as.numeric(tx_pool_comp[,2])+base_reward-as.numeric(tx_pool_comp[,7])))
+    cur_fees <- sum(as.numeric(block_template[,2]))
+    tx_pool_comp <- cbind(tx_pool_comp,c(cur_fees + as.numeric(tx_pool_comp[,2])+base_reward-as.numeric(tx_pool_comp[,7])))
     
     tx_pool_comp <- tx_pool_comp[complete.cases(tx_pool_comp),,drop=FALSE] # Get rid of the goddamned NA
     tx_pool_copy <- tx_pool_copy[complete.cases(tx_pool_copy),,drop=FALSE] # Get rid of the goddamned NA
@@ -263,8 +265,8 @@ for (i in 1:num_blocks) {
     
     # Need to use the difference between median and current blocksize to subset pool for candidates and then sort that pool by block age
     
-    #cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
-    #write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
+    cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
     
     if (size_block_template + as.numeric(block_ordered_pool[1,4]) <= med_100) {
       #So this is the easiest. If the block is lower than the median, we just add most recent and highest fee (would be the most profitable)
@@ -279,15 +281,15 @@ for (i in 1:num_blocks) {
         print("Second if triggered - standard addition goes over median")
         highest_gain <- max(as.numeric(tx_pool_comp[,8]))
         stuff_index <- c(which(as.numeric(tx_pool_comp[,4]) <= as.numeric(tx_pool_comp[,6])))
-        if (highest_gain >= 0) {
-          print("Second sub-if. A normal ordered transaction can't fit, we can't stuff another in, and there is a high gain transaction")
+        if (highest_gain >= base_reward) {
+          print("First sub-if. A normal ordered transaction can't fit, but there is a high gain transaction that makes going over median economical")
           high_gain_index <- c(which(as.numeric(tx_pool_comp[,8]) == highest_gain)) # Get row indexes of all the transactions with this gain
           if (length(high_gain_index) > 1) {high_gain_index <- high_gain_index[1]} # In future can make this random but screw it for now
           new_transaction <- tx_pool_comp[high_gain_index,1:5]
           P_current <- as.numeric(tx_pool_comp[high_gain_index,7])
         
         } else if (length(stuff_index >= 1)) {
-          print("First sub-if. Things can still fit in the block, just not the one that should go in based on transaction age")
+          print("Second sub-if. The normal ordered transaction can't fit, others can still fit in the block, and there are no high gain over median tranasctions")
           stuff_pool <- tx_pool_comp[stuff_index,,drop=FALSE] # Extract the transactions that will fit
           block_ordered_stuff <- stuff_pool[sort.list(stuff_pool[,1]),,drop=FALSE] # Sort these based on their block age
           new_transaction <- block_ordered_stuff[1,1:5]
@@ -332,7 +334,7 @@ for (i in 1:num_blocks) {
   
   # Lets add a new block to the chain !!!
   
-  newblock <- c(newblocksize,newblocktx,new_base_reward,P_current,newblockfees,newblockreward,(nrow(tx_pool_copy)),num_tx,i-min(as.numeric(block_template[,1])),med_100)
+  newblock <- c(newblocksize,newblocktx,base_reward,P_current,new_base_reward,newblockfees,newblockreward,(nrow(tx_pool_copy)),num_tx,i-min(as.numeric(block_template[,1])),med_100)
   #print(newblock)
   blockchain <- rbind (blockchain,newblock)
   
@@ -356,7 +358,7 @@ for (i in 1:num_blocks) {
   # Rest all these variables
   #Sys.sleep(1)
   last <- 200+i
-  if (i > 2 && as.numeric(blockchain[last,7]) > 500*(as.numeric(blockchain[last,2]))) 
+  if (i > 2 && as.numeric(blockchain[last,8]) > 500*(as.numeric(blockchain[last,2]))) 
   {
     print("Tx pool grew to 500 X the most recent number of transactions added to block. Stopping simulation")
     cat(c("Tx pool grew to 500 X the most recent number of transactions added to block. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
