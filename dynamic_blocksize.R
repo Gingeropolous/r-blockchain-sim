@@ -1,19 +1,11 @@
 # Monero dynamic blocksize simulator script
 # 2017 Gingeropolous
 
-# install.packages("ggplot2")
-# install.packages("reshape")
-
-#Only this one is necessary. Tried the above to to try and get some graphs but lost patience. 
 # install.packages("digest")
 
 library(digest)
-#library(adagio)
-# require(ggplot2)
-# require(reshape)
 
 setwd("/home/user/Desktop/r-blockchain-sim/")
-# sink('blocksim_output.txt')
 
 
 # PARAMETERS TO MODIFY
@@ -23,22 +15,25 @@ tx_sd <- 5 # standard deviation for that
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 40 # Number of blocks to run simulation. 720 = 1 day
-default_mult <- 1 # The default fee multiplier
+num_blocks <- 1000 # Number of blocks to run simulation. 720 = 1 day
+default_mult <- 4 # The default fee multiplier
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
 
 gen_coins <- 14092278e12 # Total generated coins grabbed from moneroblocks.info circa 3/12/2017
-plus_one <- FALSE # This triggers the experimental +1 policy, where there is no fee
+plus_one <- FALSE # This triggers the experimental +1 policy, where there is no fee. The code for this is currently absent in this sim. 
 
-# Formulas and parameters that can be modified 
+# Parameters that can be modified. 
 
 ref_base <- 10e12
-CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 60000 # new on is 300000, old one is 60000
+CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 300000 # new on is 300000, old one is 60000
 fee_factor <- 0.004e12
 
 # Write the new start of the blockchain text file
 cat(c(date(),"New blockchain run","Number of blocks",num_blocks,"default multiplier",default_mult,"spike factor",spike_factor,"tx_mean",tx_mean,"tx_sd",tx_sd) , file = "live_blockchain.txt", sep = "\n", fill = FALSE, labels = NULL, append = FALSE)
+
+#Write the new start of transactions log for re-creation
+cat(c(date(),"New transactions log","Number of blocks",num_blocks,"default multiplier",default_mult,"spike factor",spike_factor,"tx_mean",tx_mean,"tx_sd",tx_sd) , file = "transactions.txt", sep = ":", fill = FALSE, labels = NULL, append = FALSE)
 
 
 #Formula sources
@@ -152,6 +147,7 @@ for (i in 1:num_blocks) {
   M_0 <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2
   F_0 <- fee_factor
   
+  #Moneromooo's nomenclature
   BASE_FEE_PER_KB <- fee_factor
   MIN_BLOCK_SIZE_MEDIAN <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2
   median_size <- med_100
@@ -165,7 +161,7 @@ for (i in 1:num_blocks) {
   perkb_fee = (R / R_0) * (M_0 / M) * F_0
   
   # perkb_fee <- fee_factor*CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2/med_100
-  mult <- default_mult
+  
   # Lets try simulating transactions being created during this block    
 
     for (p in 1:num_tx) {  
@@ -187,10 +183,13 @@ for (i in 1:num_blocks) {
     if (wallet_auto_fee == TRUE) {
       # skip for now. Need to add back in if tx_pool_size > med_100
     } else {
+      mult <- default_mult
       transaction <- c(i,mult*perkb_fee*(tx_size/1024),digest(runif(1),algo="md5"),tx_size,mult) # Add the transaction to the mempool, 
       # Where the transaction is identified by the block # its added in, the fee multiplier, a random hash, and the transaction size
       tx_pool <- rbind(tx_pool,transaction) 
     }
+    # Write the transaction to a separate log file so can re-run same network conditions with different parameters
+    cat(c(transaction) , file = "transactions.txt", sep = "\t", fill = TRUE, labels = NULL, append = TRUE)
   }
   
   # OK, lets try to make a block and add it to the chain and delete the transactions from the transaction pool
@@ -227,6 +226,7 @@ for (i in 1:num_blocks) {
     # P_current = R * ((B / M) - 1) ^ 2
     
     # Column 6: shows the difference between the current median and the current blocksize before the transaciton is added
+        # Can change this to a single variable but didn't want to deal with modifying the index of this matrix
     tx_pool_comp <- cbind(tx_pool_copy,c(med_100-size_block_template))
     # Column 7: This line will calculate P_current if the transaction is added to the block
     # R * ( (B / M) - 1) ^ 2
@@ -265,8 +265,8 @@ for (i in 1:num_blocks) {
     
     # Need to use the difference between median and current blocksize to subset pool for candidates and then sort that pool by block age
     
-    cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
-    write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
+    #cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    #write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
     
     if (size_block_template + as.numeric(block_ordered_pool[1,4]) <= med_100) {
       #So this is the easiest. If the block is lower than the median, we just add most recent and highest fee (would be the most profitable)
@@ -357,11 +357,10 @@ for (i in 1:num_blocks) {
   
   # Rest all these variables
   #Sys.sleep(1)
-  last <- 200+i
-  if (i > 2 && as.numeric(blockchain[last,8]) > 500*(as.numeric(blockchain[last,2]))) 
+  if (i > 40 && as.numeric(blockchain[(i+199),8]) > 500*(mean(as.numeric(blockchain[(i+169):(i+199),2])))) 
   {
-    print("Tx pool grew to 500 X the most recent number of transactions added to block. Stopping simulation")
-    cat(c("Tx pool grew to 500 X the most recent number of transactions added to block. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    print("Tx pool grew to 500 X the average of the number of transactions added in the last 30 blocks. Stopping simulation")
+    cat(c("Tx pool grew to 500 X the average of the number of transactions added in the last 30 blocks. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
     break
   }
 } # End of primary for loop
