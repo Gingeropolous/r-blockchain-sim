@@ -9,7 +9,7 @@ setwd("/home/user/Desktop/r-blockchain-sim/")
 
 #Flags to modify
 
-wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
+wallet_auto_fee <- TRUE # When I figure out how to code the auto fee I'll play with it
 debug <- 0 # This increases the logging. 0 is minimal, 4 is maximal.
 
 # PARAMETERS TO MODIFY
@@ -19,8 +19,8 @@ tx_sd <- 2 # standard deviation for that
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 5000 # Number of blocks to run simulation. 720 = 1 day
-default_mult <- 4 # The default fee multiplier
+num_blocks <- 360 # Number of blocks to run simulation. 720 = 1 day
+default_mult <- 1 # The default fee multiplier
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
 
 
@@ -184,8 +184,22 @@ for (i in 1:num_blocks) {
     #hist(rnorm(500, (tx_base*1024), sd=256))
     
     
-    if (wallet_auto_fee == TRUE) {
-      # skip for now. Need to add back in if tx_pool_size > med_100
+    if (wallet_auto_fee == TRUE && sum(as.numeric(tx_pool[,4])) + tx_size > med_100 && i > 2) {
+      #This is the same code as below when looking to find transactions to include in a block
+      highest_mult <- max(as.numeric(tx_pool[,5])) # find the highest fee MULTIPLIER
+      high_mult_index <- c(which(as.numeric(tx_pool[,5]) == highest_mult)) # Get row indexes of all the transactions with this multiplier
+      high_mult_pool <- rbind(tx_pool[high_mult_index,]) # Create sub matrix of the high transactions
+      
+      if (sum(as.numeric(high_mult_pool[,4])) + tx_size < med_100) { # So all of the transaction at this priority level will eat up the block, so the currenct transaction won't get in
+        mult <- highest_mult
+      } else if (sum(as.numeric(high_mult_pool[,4])) + tx_size > med_100) { # So all of the transaction at this priority level will eat up the block, so the currenct transaction won't get in
+          mult <- max(as.numeric(high_mult_pool[,5])) + 1
+      } else {
+        mult <- default_mult
+      }
+      transaction <- c(i,mult*perkb_fee*(tx_size/1024),digest(runif(1),algo="md5"),tx_size,mult) # Add the transaction to the mempool, 
+      # Where the transaction is identified by the block # its added in, the fee multiplier, a random hash, and the transaction size
+      tx_pool <- rbind(tx_pool,transaction)
     } else {
       mult <- default_mult
       transaction <- c(i,mult*perkb_fee*(tx_size/1024),digest(runif(1),algo="md5"),tx_size,mult) # Add the transaction to the mempool, 
@@ -283,12 +297,12 @@ for (i in 1:num_blocks) {
       new_transaction <- block_ordered_pool[1,1:5]
       P_current <- 0
       
-      } else if (size_block_template + as.numeric(block_ordered_pool[1,4]) > med_100) {
+      } else if (size_block_template + as.numeric(block_ordered_pool[1,4]) > med_100 && size_block_template + as.numeric(block_ordered_pool[1,4]) <= 2*med_100) {
         print("Second if triggered - standard addition goes over median")
         highest_gain <- max(as.numeric(tx_pool_comp[,8]))
         stuff_index <- c(which(as.numeric(tx_pool_comp[,4]) <= as.numeric(tx_pool_comp[,6])))
         if (highest_gain >= base_reward) {
-          if (debug = 1) {
+          if (debug == 1) {
             cat("First sub-if. A normal ordered transaction can't fit, but there is a high gain transaction that makes going over median economical" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
           }
           high_gain_index <- c(which(as.numeric(tx_pool_comp[,8]) == highest_gain)) # Get row indexes of all the transactions with this gain
@@ -297,7 +311,7 @@ for (i in 1:num_blocks) {
           P_current <- as.numeric(tx_pool_comp[high_gain_index,7])
         
         } else if (length(stuff_index >= 1)) {
-          if (debug = 1) {
+          if (debug == 1) {
             cat("Second sub-if. The normal ordered transaction can't fit, others can still fit in the block, and there are no high gain over median tranasctions" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
           }
           stuff_pool <- tx_pool_comp[stuff_index,,drop=FALSE] # Extract the transactions that will fit
