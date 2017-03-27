@@ -7,18 +7,22 @@ library(digest)
 
 setwd("/home/user/Desktop/r-blockchain-sim/")
 
+#Flags to modify
+
+wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
+debug <- 0 # This increases the logging. 0 is minimal, 4 is maximal.
 
 # PARAMETERS TO MODIFY
-tx_mean <- 20 # mean number of transactions to add to txpool during each block
-tx_sd <- 5 # standard deviation for that 
+tx_mean <- 10 # mean number of transactions to add to txpool during each block
+tx_sd <- 2 # standard deviation for that 
 # Our Transaction Number Distribution. Just run these lines to see the distribution
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 1000 # Number of blocks to run simulation. 720 = 1 day
+num_blocks <- 5000 # Number of blocks to run simulation. 720 = 1 day
 default_mult <- 4 # The default fee multiplier
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
-wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
+
 
 gen_coins <- 14092278e12 # Total generated coins grabbed from moneroblocks.info circa 3/12/2017
 plus_one <- FALSE # This triggers the experimental +1 policy, where there is no fee. The code for this is currently absent in this sim. 
@@ -26,7 +30,7 @@ plus_one <- FALSE # This triggers the experimental +1 policy, where there is no 
 # Parameters that can be modified. 
 
 ref_base <- 10e12
-CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 300000 # new on is 300000, old one is 60000
+CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 60000 # new on is 300000, old one is 60000
 fee_factor <- 0.004e12
 
 # Write the new start of the blockchain text file
@@ -265,8 +269,10 @@ for (i in 1:num_blocks) {
     
     # Need to use the difference between median and current blocksize to subset pool for candidates and then sort that pool by block age
     
-    #cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
-    #write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
+    if (debug == 3) {
+    cat("TX_POOL_COMP" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    write.table(tx_pool_comp, file="live_blockchain.txt", row.names=FALSE, col.names=FALSE, append = TRUE, quote=FALSE, sep = "\t")
+    }
     
     if (size_block_template + as.numeric(block_ordered_pool[1,4]) <= med_100) {
       #So this is the easiest. If the block is lower than the median, we just add most recent and highest fee (would be the most profitable)
@@ -282,25 +288,33 @@ for (i in 1:num_blocks) {
         highest_gain <- max(as.numeric(tx_pool_comp[,8]))
         stuff_index <- c(which(as.numeric(tx_pool_comp[,4]) <= as.numeric(tx_pool_comp[,6])))
         if (highest_gain >= base_reward) {
-          print("First sub-if. A normal ordered transaction can't fit, but there is a high gain transaction that makes going over median economical")
+          if (debug = 1) {
+            cat("First sub-if. A normal ordered transaction can't fit, but there is a high gain transaction that makes going over median economical" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+          }
           high_gain_index <- c(which(as.numeric(tx_pool_comp[,8]) == highest_gain)) # Get row indexes of all the transactions with this gain
           if (length(high_gain_index) > 1) {high_gain_index <- high_gain_index[1]} # In future can make this random but screw it for now
           new_transaction <- tx_pool_comp[high_gain_index,1:5]
           P_current <- as.numeric(tx_pool_comp[high_gain_index,7])
         
         } else if (length(stuff_index >= 1)) {
-          print("Second sub-if. The normal ordered transaction can't fit, others can still fit in the block, and there are no high gain over median tranasctions")
+          if (debug = 1) {
+            cat("Second sub-if. The normal ordered transaction can't fit, others can still fit in the block, and there are no high gain over median tranasctions" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+          }
           stuff_pool <- tx_pool_comp[stuff_index,,drop=FALSE] # Extract the transactions that will fit
           block_ordered_stuff <- stuff_pool[sort.list(stuff_pool[,1]),,drop=FALSE] # Sort these based on their block age
           new_transaction <- block_ordered_stuff[1,1:5]
           P_current <- 0
         
         } else {
-          print("Break out of blockfill because over median and no gain possible")
+          if (debug == 1 ) {
+            cat("Break out of blockfill because over median and no gain possible" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+          }
           break
       }
     } else { 
-      print ("No blockfill conditions met at all")
+      if (debug == 1 ) {
+        cat("No blockfill conditions met at all" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+      }
       break
       }
     
