@@ -9,28 +9,31 @@ setwd("/home/user/Desktop/r-blockchain-sim/")
 
 #Flags to modify
 
-wallet_auto_fee <- TRUE # When I figure out how to code the auto fee I'll play with it
-debug <- 0 # This increases the logging. 0 is minimal, 4 is maximal.
+wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
+debug <- 1 # This increases the logging in the live_blockchain file. 0 is minimal, 4 is maximal.
+plus_one <- FALSE # This triggers the experimental +1 policy, where there is no fee. The code for this is currently absent in this sim. 
+cycle <- FALSE # Triggers the number of transactions entering the tx pool to cycle, based on cycle factor below.
 
 # PARAMETERS TO MODIFY
-tx_mean <- 10 # mean number of transactions to add to txpool during each block
-tx_sd <- 2 # standard deviation for that 
+
+old_allow_transaction <- 30 #This is for the sim break of oldest transaction
+sim_break <- 200 # This is for the sim break multiplier of tx pool
+autospeed = 1 # This is used for the wall_auto_fee. Its used in the calculation to determine whether to up the multiplier of a transaction. 
+#If its 1, then the multiplier is increased to get into the next block. if its 2, its 2 blocks. (done by multiplying the median by this number)
+default_mult <- 4 # The default fee multiplier  
+cycle_factor <- 45 # For this calc: num_tx=floor(num_tx*(1+sin(i/cycle_factor))). Lower factor is faster cycling. 
+tx_mean <- 20 # mean number of transactions to add to txpool during each block
+tx_sd <- tx_mean / 3 # standard deviation for that 
 # Our Transaction Number Distribution. Just run these lines to see the distribution
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
 
-num_blocks <- 360 # Number of blocks to run simulation. 720 = 1 day
-default_mult <- 1 # The default fee multiplier
+num_blocks <- 720 # Number of blocks to run simulation. 720 = 1 day
 spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
-
-
 gen_coins <- 14092278e12 # Total generated coins grabbed from moneroblocks.info circa 3/12/2017
-plus_one <- FALSE # This triggers the experimental +1 policy, where there is no fee. The code for this is currently absent in this sim. 
-
-# Parameters that can be modified. 
 
 ref_base <- 10e12
-CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 60000 # new on is 300000, old one is 60000
+CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 <- 300000 # new on is 300000, old one is 60000
 fee_factor <- 0.004e12
 
 # Write the new start of the blockchain text file
@@ -78,7 +81,7 @@ tx_pool <- matrix(NA,ncol = 5)
 
 # Create a blockchain, and boostrap it with a median as pulled from the existing blockchain
 blockchain <- matrix(NA,nrow=200, ncol = 11)
-blockchain[,1] <- (rnorm(200, mean=51983.5, sd=20000))
+blockchain[,1] <- (rnorm(200, mean=CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2, sd=20000))
 hist(blockchain[,1])
 
 # Block header format
@@ -119,7 +122,11 @@ for (i in 1:num_blocks) {
   spike <- runif(1) # Probability of pool dump randomizer, or just large transaction entrance
   if (spike > 0.95 ) {num_tx <- num_tx*spike_factor}
   
-  num_tx=floor(num_tx*(1+sin(i/180)))
+  if (cycle == TRUE) {num_tx=floor(num_tx*(1+sin(i/cycle_factor))) 
+  } else 
+    {
+      num_tx=floor(num_tx)
+    }
   
   #pprint("Number of transactions")
   #print(num_tx)
@@ -190,9 +197,9 @@ for (i in 1:num_blocks) {
       high_mult_index <- c(which(as.numeric(tx_pool[,5]) == highest_mult)) # Get row indexes of all the transactions with this multiplier
       high_mult_pool <- rbind(tx_pool[high_mult_index,]) # Create sub matrix of the high transactions
       
-      if (sum(as.numeric(high_mult_pool[,4])) + tx_size < med_100) { # So all of the transaction at this priority level will eat up the block, so the currenct transaction won't get in
+      if (sum(as.numeric(high_mult_pool[,4])) + tx_size < med_100) { # So there are other high priority transactions, but there aren't enough of these to fill the block exclusively, so we can just get in with them
         mult <- highest_mult
-      } else if (sum(as.numeric(high_mult_pool[,4])) + tx_size > med_100) { # So all of the transaction at this priority level will eat up the block, so the currenct transaction won't get in
+      } else if (sum(as.numeric(high_mult_pool[,4])) + tx_size > autospeed*med_100) { # So all of the transaction at this priority level will eat up the block, so the currenct transaction won't get in
           mult <- max(as.numeric(high_mult_pool[,5])) + 1
       } else {
         mult <- default_mult
@@ -306,10 +313,17 @@ for (i in 1:num_blocks) {
             cat("First sub-if. A normal ordered transaction can't fit, but there is a high gain transaction that makes going over median economical" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
           }
           high_gain_index <- c(which(as.numeric(tx_pool_comp[,8]) == highest_gain)) # Get row indexes of all the transactions with this gain
-          if (length(high_gain_index) > 1) {high_gain_index <- high_gain_index[1]} # In future can make this random but screw it for now
-          new_transaction <- tx_pool_comp[high_gain_index,1:5]
-          P_current <- as.numeric(tx_pool_comp[high_gain_index,7])
-        
+          high_gain_fitdex <- c(which(as.numeric(tx_pool_comp[high_gain_index,4]) + size_block_template <= 2*med_100)) # I think this is BROKEN
+          if (length(high_gain_fitdex) > 1) 
+            {
+            high_gain_fitdex <- high_gain_fitdex[1] # In future can make this random but screw it for now
+          } else if (length(high_gain_fitdex) == 0) 
+            {
+            break
+          } 
+          # This is where some fanciness will be needed to add high gain txes that will fit under 2x median
+          new_transaction <- tx_pool_comp[high_gain_fitdex,1:5]
+          P_current <- as.numeric(tx_pool_comp[high_gain_fitdex,7])
         } else if (length(stuff_index >= 1)) {
           if (debug == 1) {
             cat("Second sub-if. The normal ordered transaction can't fit, others can still fit in the block, and there are no high gain over median tranasctions" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
@@ -323,6 +337,7 @@ for (i in 1:num_blocks) {
           if (debug == 1 ) {
             cat("Break out of blockfill because over median and no gain possible" , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
           }
+          P_current <- 0
           break
       }
     } else { 
@@ -337,16 +352,19 @@ for (i in 1:num_blocks) {
     tx_pool_copy <- tx_pool_copy[-tx_index,,drop = FALSE] # delete this transaction from the tx_pool_copy, drop=FALSe prevents the fucker from turning into a vector
     
  } # end of second else for the tx_pool being non-empty
+    #print(P_current)
+    #print(base_reward)
+    #print(gen_coins)
  } # This is the end of the Repeat Loop for creating a block template
-  } # end of first else for the tx_pool being non-empty
-  
+      
     newblocksize <- sum(as.numeric(block_template[,4]))
     newblocktx <- nrow(block_template)
     new_base_reward <- base_reward - P_current
     newblockfees <- sum(as.numeric(block_template[,2]))
     newblockreward <- base_reward - P_current + newblockfees
 
-    
+    } # end of first else for the tx_pool being non-empty
+  
   #print("We made it out of the blockfill loop")
   # Block header format
   # Col 1: block size
@@ -385,10 +403,12 @@ for (i in 1:num_blocks) {
   
   # Rest all these variables
   #Sys.sleep(1)
-  if (i > 40 && as.numeric(blockchain[(i+199),8]) > 500*(mean(as.numeric(blockchain[(i+169):(i+199),2])))) 
+
+  if (i > 40 && mean(as.numeric(blockchain[(i+169):(i+199),10])) > old_allow_transaction)
+  #if (i > 40 && as.numeric(blockchain[(i+199),8]) > sim_break*(mean(as.numeric(blockchain[(i+169):(i+199),2])))) 
   {
-    print("Tx pool grew to 500 X the average of the number of transactions added in the last 30 blocks. Stopping simulation")
-    cat(c("Tx pool grew to 500 X the average of the number of transactions added in the last 30 blocks. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    print("Sim break condition met. Stopping simulation")
+    cat(c("Sim break condition met. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)," Oldest transaction: ",max(as.numeric(blockchain[(i+199),10]))) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
     break
   }
 } # End of primary for loop
