@@ -12,12 +12,14 @@ setwd("/home/user/Desktop/r-blockchain-sim/")
 wallet_auto_fee <- FALSE # When I figure out how to code the auto fee I'll play with it
 debug <- 1 # This increases the logging in the live_blockchain file. 0 is minimal, 4 is maximal.
 plus_one <- FALSE # This triggers the experimental +1 policy, where there is no fee. The code for this is currently absent in this sim. 
-cycle <- FALSE # Triggers the number of transactions entering the tx pool to cycle, based on cycle factor below.
+cycle <- TRUE # Triggers the number of transactions entering the tx pool to cycle, based on cycle factor below.
+soft_tail <- TRUE
+spike_factor <- 1 # The multiplier of simulated transaction spikes that defy the normal distribution. Spike of 1 removes the spike. 
 
 # PARAMETERS TO MODIFY
 
 old_allow_transaction <- 30 #This is for the sim break of oldest transaction
-sim_break <- 200 # This is for the sim break multiplier of tx pool
+sim_break <- 1000 # This is for the sim break multiplier of tx pool
 autospeed = 1 # This is used for the wall_auto_fee. Its used in the calculation to determine whether to up the multiplier of a transaction. 
 #If its 1, then the multiplier is increased to get into the next block. if its 2, its 2 blocks. (done by multiplying the median by this number)
 default_mult <- 4 # The default fee multiplier  
@@ -27,9 +29,9 @@ tx_sd <- tx_mean / 3 # standard deviation for that
 # Our Transaction Number Distribution. Just run these lines to see the distribution
 num_transaction_dist <- floor(rnorm(400, mean=tx_mean, sd=tx_sd))
 hist(num_transaction_dist)
+linwin <- 99 # Size of window for linear model -1
 
-num_blocks <- 720 # Number of blocks to run simulation. 720 = 1 day
-spike_factor <- 3 # The multiplier of simulated transaction spikes that defy the normal distribution
+num_blocks <- 3000 # Number of blocks to run simulation. 720 = 1 day
 gen_coins <- 14092278e12 # Total generated coins grabbed from moneroblocks.info circa 3/12/2017
 
 ref_base <- 10e12
@@ -80,8 +82,9 @@ tx_pool <- matrix(NA,ncol = 5)
 # Col 5: fee multiplier
 
 # Create a blockchain, and boostrap it with a median as pulled from the existing blockchain
-blockchain <- matrix(NA,nrow=200, ncol = 11)
-blockchain[,1] <- (rnorm(200, mean=CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2, sd=20000))
+blockchain <- matrix(NA,nrow=1000, ncol = 11)
+blockchain[,1] <- (rnorm(1000, mean=CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2, sd=20000))
+blockchain[,11] <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2
 hist(blockchain[,1])
 
 # Block header format
@@ -104,6 +107,7 @@ tmpltnames <- c("Blocktime added to txpool","Fee","Hash","Size","Multiplier")
 
 # This is the beginning of the simulated blockchain. It will run num_blocks many times.
 for (i in 1:num_blocks) {
+  Sys.sleep(0.1)
   print("Beginning of block loop")
   print(i)
   #Take care of base reward!
@@ -141,6 +145,60 @@ for (i in 1:num_blocks) {
   cat(c("Original med_100 calc:",med_100) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
   if (med_100 < CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2) {med_100 <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2}
 
+  
+  # Lets try creating something that extends the tail of the growing blockchain to prevent cyclical behavior from making things stupid.
+  # Create a line from the last 100 blocks med_100 values and extract some stats
+  y <- c(as.numeric(blockchain[(size_of_blockchain-linwin):size_of_blockchain,1]))
+  x <- c(0:linwin)
+  
+
+  fit  <- lm(y~x)
+  #second degree
+  fit2 <- lm(y~poly(x,2,raw=TRUE))
+  #third degree
+  fit3 <- lm(y~poly(x,3,raw=TRUE))
+  #fourth degree
+  fit4 <- lm(y~poly(x,4,raw=TRUE))
+  #fourth degree
+  fit5 <- lm(y~poly(x,5,raw=TRUE))
+  #fourth degree
+  fit6 <- lm(y~poly(x,6,raw=TRUE))
+  
+  behavior <- fit2
+  slp <-  coef(fit)[2]
+  print("SLOPE")
+  print(slp)
+  #coef(behavior)["(Intercept)"]
+  #coef(behavior)["x"]
+  #generate range of 50 numbers starting from 30 and ending at 160
+  xx <- x
+  plot(x,y,pch=19,ylim=c(250000,(2e6)))
+  lines(xx, predict(fit, data.frame(x=xx)), col="red")
+  lines(xx, predict(fit2, data.frame(x=xx)), col="green")
+  lines(xx, predict(fit3, data.frame(x=xx)), col="blue")
+  lines(xx, predict(fit4, data.frame(x=xx)), col="purple")
+  lines(xx, predict(fit5, data.frame(x=xx)), col="orange")
+  lines(xx, predict(fit6, data.frame(x=xx)), col="black")
+
+  if (soft_tail == TRUE) {
+    
+    # These are just templates to learn how to extract stuff from goddamned lists
+    #coef(lmResult)
+    #(Intercept)           x 
+    #0.13783934 -0.02748145 
+    #> coef(lmResult)["(Intercept)"]
+    #(Intercept) 
+    #0.1378393 
+    #> coef(lmResult)["x"]
+    #x 
+    #-0.02748145 
+
+    med_100 <- coef(behavior)["(Intercept)"]
+    if (med_100 < CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2) {med_100 <- CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2}
+  } 
+  
+  
+  
   #Lets try the per kb fee
   #The one below, as documented on the SE and on bitcointalk, doesn't seem to actually be implemented in the code
   #fee <- (base_reward/ref_base)*(min_block/block_size_limit)*fee_factor  
@@ -304,7 +362,7 @@ for (i in 1:num_blocks) {
       new_transaction <- block_ordered_pool[1,1:5]
       P_current <- 0
       
-      } else if (size_block_template + as.numeric(block_ordered_pool[1,4]) > med_100 && size_block_template + as.numeric(block_ordered_pool[1,4]) <= 2*med_100) {
+    } else if (size_block_template + as.numeric(block_ordered_pool[1,4]) > med_100 && size_block_template + as.numeric(block_ordered_pool[1,4]) <= 2*med_100) {
         print("Second if triggered - standard addition goes over median")
         highest_gain <- max(as.numeric(tx_pool_comp[,8]))
         stuff_index <- c(which(as.numeric(tx_pool_comp[,4]) <= as.numeric(tx_pool_comp[,6])))
@@ -401,14 +459,14 @@ for (i in 1:num_blocks) {
   
   gen_coins <- gen_coins + new_base_reward
   
-  # Rest all these variables
-  #Sys.sleep(1)
 
-  if (i > 40 && mean(as.numeric(blockchain[(i+169):(i+199),10])) > old_allow_transaction)
+
+
+  if (i > 40 && mean(as.numeric(blockchain[(i+969):(i+999),10])) > old_allow_transaction)
   #if (i > 40 && as.numeric(blockchain[(i+199),8]) > sim_break*(mean(as.numeric(blockchain[(i+169):(i+199),2])))) 
   {
     print("Sim break condition met. Stopping simulation")
-    cat(c("Sim break condition met. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)," Oldest transaction: ",max(as.numeric(blockchain[(i+199),10]))) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
+    cat(c("Sim break condition met. Stopping simulation. Size of tx_pool",nrow(tx_pool_copy)," Oldest transaction: ",max(as.numeric(blockchain[(i+999),10]))) , file = "live_blockchain.txt", sep = "\n", fill = TRUE, labels = NULL, append = TRUE)
     break
   }
 } # End of primary for loop
